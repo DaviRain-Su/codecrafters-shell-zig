@@ -31,9 +31,10 @@ pub fn main() !void {
                         .type, .echo, .exit => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
                         .notfound => {
                             const command_name = command[args.index..];
+                            var found = false;
                             // Read path environment variable
                             const path_env = std.os.environ;
-                            for (path_env) |item| {
+                            outer_loop: for (path_env) |item| {
                                 //convert to string
                                 const item_str = std.mem.span(item);
                                 if (std.mem.startsWith(u8, item_str, "PATH=")) {
@@ -41,6 +42,7 @@ pub fn main() !void {
                                     // ls directory
                                     const path_str = std.mem.span(path);
                                     var dirs = std.mem.splitAny(u8, path_str, ":");
+
                                     while (dirs.next()) |dir| {
                                         // allocate memory for dir_path
                                         var buffer = [_]u8{0} ** 1024;
@@ -49,36 +51,30 @@ pub fn main() !void {
                                         // seem don't to free
                                         //errdefer fixed_buffer_allocator.free();
                                         const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
-                                        const file = std.fs.openFileAbsolute(dir_path, .{}) catch {
-                                            try stdout.print("{s}: not found\n", .{command_name});
-                                            return std.process.exit(1);
-                                        };
-                                        defer file.close();
-                                        const status = try file.stat();
-                                        switch (status.kind) {
-                                            std.fs.File.Kind.directory => {
-                                                try stdout.print("{s} is a directory\n", .{dir_path});
-                                                return;
-                                            },
-                                            std.fs.File.Kind.file => {
-                                                // check if is executable permission
-                                                if (status.mode & 0o111 != 0) {
-                                                    try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
-                                                } else {
-                                                    try stdout.print("{s} is a file\n", .{dir_path});
-                                                }
-                                                return;
-                                            },
-                                            else => {
-                                                try stdout.print("{s} is not a file or directory\n", .{dir_path});
-                                                return;
-                                            },
+                                        defer allocator.free(dir_path);
+                                        // check if file is executable if file is executable return
+                                        if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
+                                            // 成功：找到了！
+                                            try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
+                                            found = true;
+
+                                            // 【关键修改】：这里只跳出循环，不要 exit！
+                                            break :outer_loop;
+                                        } else |_| {
+                                            // 失败：当前目录下没有，或者不可执行。
+                                            // 关键点：什么都不做，继续下一次循环！
+                                            continue;
                                         }
                                     }
+                                    // 既然已经找到了 PATH 环境变量并处理完了，就不需要再看其他环境变量了
+                                    break;
                                 }
                             }
 
-                            try stdout.print("{s}: not found\n", .{command_name});
+                            // 【关键补充】：如果循环结束了还没找到，打印 not found
+                            if (!found) {
+                                try stdout.print("{s}: not found\n", .{command_name});
+                            }
                         },
                     }
                 },
