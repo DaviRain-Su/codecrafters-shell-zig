@@ -70,7 +70,65 @@ pub fn main() !void {
                 },
                 .echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
                 .exit => return std.process.exit(0),
-                .notfound => try stdout.print("{s}: command not found\n", .{ .command = command }),
+                .notfound => {
+                    const command_name = command[args.index..];
+                    if (std.posix.getenv("PATH")) |path_env| {
+                        var dirs = std.mem.splitScalar(u8, path_env, ':');
+                        // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
+                        // 如果你非常在意性能，可以将 allocator 定义在 main 函数顶部传进来
+                        const allocator = std.heap.page_allocator;
+                        var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
+                        defer argv_list.deinit(allocator);
+                        while (args.next()) |arg| {
+                            const current_args = try allocator.dupeZ(u8, arg);
+                            defer allocator.free(current_args);
+                            try argv_list.append(allocator, current_args);
+                        }
+                        // 1. 确保一定要先 append(null)
+                        try argv_list.append(allocator, null);
+
+                        // 2. 定义 execveZ 需要的类型
+                        const ArgvType = [*:null]const ?[*:0]const u8;
+
+                        // 3. 强制转换指针类型
+                        // 告诉编译器："我发誓这里面是以 null 结尾的"
+                        const argv_ptr: ArgvType = @ptrCast(argv_list.items.ptr);
+
+                        while (dirs.next()) |dir| {
+                            // 2. 拼接路径: dir + "/" + command_name
+                            const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
+                            defer allocator.free(dir_path);
+                            // 3: check if file is executable if file is executable return
+                            if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
+                                // 成功：找到了！
+                                //try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
+
+                                // 1. 将 dir_path 转换为以 null 结尾的字符串 (Z代表 Zero-terminated)
+                                const dir_path_z = try allocator.dupeZ(u8, dir_path);
+                                defer allocator.free(dir_path_z); // 养成释放内存的习惯（虽然 exec 成功后会替换进程内存）
+
+                                // 2. 准备环境变量 (使用当前环境)
+                                const env_map = try std.process.getEnvMap(allocator);
+                                const envp = try std.process.createNullDelimitedEnvMap(allocator, &env_map); // 这是一个复杂的转换函数
+
+                                // 4. 执行
+                                // argv_list.items.ptr 就是我们要的 [*:null]const ?[*:0]const u8
+                                const err = std.posix.execveZ(dir_path_z, argv_ptr, envp);
+                                // 只要代码能运行到这一行，说明 execveZ 肯定失败了
+                                std.debug.print("Exec failed: {}\n", .{err});
+
+                                // 【关键修改】：这里只跳出循环，不要 exit！
+                                break;
+                            } else |_| {
+                                // 失败：当前目录下没有，或者不可执行。
+                                // 关键点：什么都不做，继续下一次循环！
+                                continue;
+                            }
+                        }
+                    }
+                    // and run this executable pass args
+                    try stdout.print("{s}: command not found\n", .{ .command = command });
+                },
             }
         }
     }
