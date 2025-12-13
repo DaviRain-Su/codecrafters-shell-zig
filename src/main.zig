@@ -56,7 +56,6 @@ pub fn main() !void {
                                         // 成功：找到了！
                                         try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
                                         found = true;
-
                                         // 【关键修改】：这里只跳出循环，不要 exit！
                                         break;
                                     } else |_| {
