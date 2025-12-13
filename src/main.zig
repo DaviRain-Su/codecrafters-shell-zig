@@ -10,6 +10,7 @@ var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
 const stdout = &stdout_writer.interface;
 
 const Commands = enum {
+    type,
     echo,
     exit,
     notfound,
@@ -22,11 +23,20 @@ pub fn main() !void {
             continue;
         } else {
             var args = std.mem.tokenizeScalar(u8, command, ' ');
-            const translated_command = std.meta.stringToEnum(Commands, args.next().?) orelse Commands.notfound;
+            const translated_command = std.meta.stringToEnum(Commands, args.next().?) orelse .notfound;
             switch (translated_command) {
-                Commands.echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
-                Commands.exit => return std.process.exit(0),
-                Commands.notfound => try stdout.print("{s}: command not found\n", .{ .command = command }),
+                .type => {
+                    const cmd = std.meta.stringToEnum(Commands, args.peek().?) orelse .notfound;
+                    switch (cmd) {
+                        .type => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
+                        .echo => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
+                        .exit => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
+                        .notfound => try stdout.print("{s}: command not found\n", .{ .command = command }),
+                    }
+                },
+                .echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
+                .exit => return std.process.exit(0),
+                .notfound => try stdout.print("{s}: command not found\n", .{ .command = command }),
             }
         }
     }
