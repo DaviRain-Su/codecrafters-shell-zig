@@ -71,7 +71,6 @@ pub fn main() !void {
                 .echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
                 .exit => return std.process.exit(0),
                 .notfound => {
-                    const command_name = command[args.index..];
                     if (std.posix.getenv("PATH")) |path_env| {
                         var dirs = std.mem.splitScalar(u8, path_env, ':');
                         // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
@@ -79,7 +78,7 @@ pub fn main() !void {
                         const allocator = std.heap.page_allocator;
                         var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
                         defer argv_list.deinit(allocator);
-                        const cmd_z = try allocator.dupeZ(u8, command_name);
+                        const cmd_z = try allocator.dupeZ(u8, cmd_str);
                         try argv_list.append(allocator, cmd_z);
                         while (args.next()) |arg| {
                             const current_args = try allocator.dupeZ(u8, arg);
@@ -97,7 +96,7 @@ pub fn main() !void {
 
                         while (dirs.next()) |dir| {
                             // 2. 拼接路径: dir + "/" + command_name
-                            const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
+                            const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, cmd_str });
                             defer allocator.free(dir_path);
                             // 3: check if file is executable if file is executable return
                             if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
