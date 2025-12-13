@@ -139,7 +139,7 @@ pub fn main() !void {
                     }
 
                     if (!found) {
-                        try stdout.print("Command not found: {s}\n", .{command});
+                        try stdout.print("{s}: command not found\n", .{command});
                     }
                 },
             }
