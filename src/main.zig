@@ -17,6 +17,11 @@ const Commands = enum {
 };
 
 pub fn main() !void {
+    // 内存分配器 (建议定义在循环外)
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
     while (true) {
         const command = try prompt("$ ");
         if (command.len == 0) {
@@ -41,7 +46,7 @@ pub fn main() !void {
                                 var dirs = std.mem.splitScalar(u8, path_env, ':');
                                 // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
                                 // 如果你非常在意性能，可以将 allocator 定义在 main 函数顶部传进来
-                                const allocator = std.heap.page_allocator;
+                                //const allocator = std.heap.page_allocator;
                                 while (dirs.next()) |dir| {
                                     // 2. 拼接路径: dir + "/" + command_name
                                     const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
@@ -76,7 +81,7 @@ pub fn main() !void {
                         var dirs = std.mem.splitScalar(u8, path_env, ':');
                         // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
                         // 如果你非常在意性能，可以将 allocator 定义在 main 函数顶部传进来
-                        const allocator = std.heap.page_allocator;
+                        //const allocator = std.heap.page_allocator;
                         var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
                         defer argv_list.deinit(allocator);
                         const cmd_z = try allocator.dupeZ(u8, cmd_str);
