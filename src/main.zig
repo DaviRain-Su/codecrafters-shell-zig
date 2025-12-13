@@ -10,10 +10,11 @@ var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
 const stdout = &stdout_writer.interface;
 
 pub fn main() !void {
-    // TODO: Uncomment the code below to pass the first stage
-
     while (true) {
         const user_input = try prompt("$ ");
+        if (std.mem.eql(u8, user_input, "exit")) {
+            return std.process.exit(0);
+        }
         try stdout.print("{s}: command not found\n", .{user_input});
     }
 }
