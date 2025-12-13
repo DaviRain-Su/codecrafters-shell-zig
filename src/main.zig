@@ -79,9 +79,10 @@ pub fn main() !void {
                         const allocator = std.heap.page_allocator;
                         var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
                         defer argv_list.deinit(allocator);
+                        const cmd_z = try allocator.dupeZ(u8, command_name);
+                        try argv_list.append(allocator, cmd_z);
                         while (args.next()) |arg| {
                             const current_args = try allocator.dupeZ(u8, arg);
-                            defer allocator.free(current_args);
                             try argv_list.append(allocator, current_args);
                         }
                         // 1. 确保一定要先 append(null)
@@ -100,9 +101,6 @@ pub fn main() !void {
                             defer allocator.free(dir_path);
                             // 3: check if file is executable if file is executable return
                             if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
-                                // 成功：找到了！
-                                //try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
-
                                 // 1. 将 dir_path 转换为以 null 结尾的字符串 (Z代表 Zero-terminated)
                                 const dir_path_z = try allocator.dupeZ(u8, dir_path);
                                 defer allocator.free(dir_path_z); // 养成释放内存的习惯（虽然 exec 成功后会替换进程内存）
@@ -111,11 +109,23 @@ pub fn main() !void {
                                 const env_map = try std.process.getEnvMap(allocator);
                                 const envp = try std.process.createNullDelimitedEnvMap(allocator, &env_map); // 这是一个复杂的转换函数
 
-                                // 4. 执行
-                                // argv_list.items.ptr 就是我们要的 [*:null]const ?[*:0]const u8
-                                const err = std.posix.execveZ(dir_path_z, argv_ptr, envp);
-                                // 只要代码能运行到这一行，说明 execveZ 肯定失败了
-                                std.debug.print("Exec failed: {}\n", .{err});
+                                // [修复 3] 必须 Fork！
+                                const pid = try std.posix.fork();
+
+                                if (pid == 0) {
+                                    // === 子进程 ===
+                                    // 这里执行 exec，替换子进程
+                                    const err = std.posix.execveZ(dir_path_z, argv_ptr, envp);
+                                    // 如果到了这里，说明 exec 失败了
+                                    std.debug.print("Exec failed: {}\n", .{err});
+                                    std.posix.exit(1); // 子进程必须退出
+                                } else {
+                                    // === 父进程 (Shell) ===
+                                    // 等待子进程结束
+                                    const wait_result = std.posix.waitpid(pid, 0);
+                                    // wait_result 包含子进程的退出状态
+                                    _ = wait_result;
+                                }
 
                                 // 【关键修改】：这里只跳出循环，不要 exit！
                                 break;
@@ -126,8 +136,6 @@ pub fn main() !void {
                             }
                         }
                     }
-                    // and run this executable pass args
-                    //try stdout.print("{s}: command not found\n", .{ .command = command });
                 },
             }
         }
