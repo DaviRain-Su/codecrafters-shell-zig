@@ -71,6 +71,7 @@ pub fn main() !void {
                 .echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
                 .exit => return std.process.exit(0),
                 .notfound => {
+                    var found = false;
                     if (std.posix.getenv("PATH")) |path_env| {
                         var dirs = std.mem.splitScalar(u8, path_env, ':');
                         // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
@@ -100,6 +101,7 @@ pub fn main() !void {
                             defer allocator.free(dir_path);
                             // 3: check if file is executable if file is executable return
                             if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
+                                found = true;
                                 // 1. 将 dir_path 转换为以 null 结尾的字符串 (Z代表 Zero-terminated)
                                 const dir_path_z = try allocator.dupeZ(u8, dir_path);
                                 defer allocator.free(dir_path_z); // 养成释放内存的习惯（虽然 exec 成功后会替换进程内存）
@@ -134,6 +136,10 @@ pub fn main() !void {
                                 continue;
                             }
                         }
+                    }
+
+                    if (!found) {
+                        try stdout.print("Command not found: {s}\n", .{command});
                     }
                 },
             }
