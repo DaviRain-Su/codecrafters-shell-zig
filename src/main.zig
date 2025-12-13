@@ -23,6 +23,9 @@ pub fn main() !void {
     const allocator = arena.allocator();
 
     while (true) {
+        // 每次循环清空 Arena 内存池，防止内存泄漏，处理起来非常方便！
+        _ = arena.reset(.retain_capacity);
+
         const command = try prompt("$ ");
         if (command.len == 0) {
             continue;
@@ -44,9 +47,6 @@ pub fn main() !void {
                             // std.posix.getenv 返回 ?[]const u8，如果为 null 则跳过
                             if (std.posix.getenv("PATH")) |path_env| {
                                 var dirs = std.mem.splitScalar(u8, path_env, ':');
-                                // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
-                                // 如果你非常在意性能，可以将 allocator 定义在 main 函数顶部传进来
-                                //const allocator = std.heap.page_allocator;
                                 while (dirs.next()) |dir| {
                                     // 2. 拼接路径: dir + "/" + command_name
                                     const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
@@ -76,30 +76,27 @@ pub fn main() !void {
                 .echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
                 .exit => return std.process.exit(0),
                 .notfound => {
+                    var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
+                    defer argv_list.deinit(allocator);
+                    const cmd_z = try allocator.dupeZ(u8, cmd_str);
+                    try argv_list.append(allocator, cmd_z);
+                    while (args.next()) |arg| {
+                        const current_args = try allocator.dupeZ(u8, arg);
+                        try argv_list.append(allocator, current_args);
+                    }
+                    // 1. 确保一定要先 append(null)
+                    try argv_list.append(allocator, null);
+
+                    // 2. 定义 execveZ 需要的类型
+                    const ArgvType = [*:null]const ?[*:0]const u8;
+
+                    // 3. 强制转换指针类型
+                    // 告诉编译器："我发誓这里面是以 null 结尾的"
+                    const argv_ptr: ArgvType = @ptrCast(argv_list.items.ptr);
+
                     var found = false;
                     if (std.posix.getenv("PATH")) |path_env| {
                         var dirs = std.mem.splitScalar(u8, path_env, ':');
-                        // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
-                        // 如果你非常在意性能，可以将 allocator 定义在 main 函数顶部传进来
-                        //const allocator = std.heap.page_allocator;
-                        var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
-                        defer argv_list.deinit(allocator);
-                        const cmd_z = try allocator.dupeZ(u8, cmd_str);
-                        try argv_list.append(allocator, cmd_z);
-                        while (args.next()) |arg| {
-                            const current_args = try allocator.dupeZ(u8, arg);
-                            try argv_list.append(allocator, current_args);
-                        }
-                        // 1. 确保一定要先 append(null)
-                        try argv_list.append(allocator, null);
-
-                        // 2. 定义 execveZ 需要的类型
-                        const ArgvType = [*:null]const ?[*:0]const u8;
-
-                        // 3. 强制转换指针类型
-                        // 告诉编译器："我发誓这里面是以 null 结尾的"
-                        const argv_ptr: ArgvType = @ptrCast(argv_list.items.ptr);
-
                         while (dirs.next()) |dir| {
                             // 2. 拼接路径: dir + "/" + command_name
                             const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, cmd_str });
