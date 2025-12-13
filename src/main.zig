@@ -23,7 +23,10 @@ pub fn main() !void {
             continue;
         } else {
             var args = std.mem.tokenizeScalar(u8, command, ' ');
-            const translated_command = std.meta.stringToEnum(Commands, args.next().?) orelse .notfound;
+            // 注意：这里需要处理 args 为空的情况，否则 args.next().? 会 crash
+            // 实际使用建议加个 if (args.peek() == null) check
+            const cmd_str = args.next() orelse continue;
+            const translated_command = std.meta.stringToEnum(Commands, cmd_str) orelse .notfound;
             switch (translated_command) {
                 .type => {
                     const cmd = std.meta.stringToEnum(Commands, args.peek().?) orelse .notfound;
@@ -32,46 +35,33 @@ pub fn main() !void {
                         .notfound => {
                             const command_name = command[args.index..];
                             var found = false;
-                            // Read path environment variable
-                            const path_env = std.os.environ;
-                            outer_loop: for (path_env) |item| {
-                                //convert to string
-                                const item_str = std.mem.span(item);
-                                if (std.mem.startsWith(u8, item_str, "PATH=")) {
-                                    const path = item["PATH=".len..];
-                                    // ls directory
-                                    const path_str = std.mem.span(path);
-                                    var dirs = std.mem.splitAny(u8, path_str, ":");
+                            // 1. 直接获取 PATH 环境变量 (如果不存在，默认为空字符串)
+                            // std.posix.getenv 返回 ?[]const u8，如果为 null 则跳过
+                            if (std.posix.getenv("PATH")) |path_env| {
+                                var dirs = std.mem.splitScalar(u8, path_env, ':');
+                                // 使用通用分配器，比在循环里反复创建 FixedBufferAllocator 更清晰
+                                // 如果你非常在意性能，可以将 allocator 定义在 main 函数顶部传进来
+                                const allocator = std.heap.page_allocator;
+                                while (dirs.next()) |dir| {
+                                    // 2. 拼接路径: dir + "/" + command_name
+                                    const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
+                                    defer allocator.free(dir_path);
+                                    // 3: check if file is executable if file is executable return
+                                    if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
+                                        // 成功：找到了！
+                                        try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
+                                        found = true;
 
-                                    while (dirs.next()) |dir| {
-                                        // allocate memory for dir_path
-                                        var buffer = [_]u8{0} ** 1024;
-                                        var fixed_buffer_allocator = std.heap.FixedBufferAllocator.init(&buffer);
-                                        const allocator = fixed_buffer_allocator.allocator();
-                                        // seem don't to free
-                                        //errdefer fixed_buffer_allocator.free();
-                                        const dir_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
-                                        defer allocator.free(dir_path);
-                                        // check if file is executable if file is executable return
-                                        if (std.posix.access(dir_path, std.posix.X_OK)) |_| {
-                                            // 成功：找到了！
-                                            try stdout.print("{s} is {s}\n", .{ command_name, dir_path });
-                                            found = true;
-
-                                            // 【关键修改】：这里只跳出循环，不要 exit！
-                                            break :outer_loop;
-                                        } else |_| {
-                                            // 失败：当前目录下没有，或者不可执行。
-                                            // 关键点：什么都不做，继续下一次循环！
-                                            continue;
-                                        }
+                                        // 【关键修改】：这里只跳出循环，不要 exit！
+                                        break;
+                                    } else |_| {
+                                        // 失败：当前目录下没有，或者不可执行。
+                                        // 关键点：什么都不做，继续下一次循环！
+                                        continue;
                                     }
-                                    // 既然已经找到了 PATH 环境变量并处理完了，就不需要再看其他环境变量了
-                                    break;
                                 }
                             }
-
-                            // 【关键补充】：如果循环结束了还没找到，打印 not found
+                            // 4：如果循环结束了还没找到，打印 not found
                             if (!found) {
                                 try stdout.print("{s}: not found\n", .{command_name});
                             }
