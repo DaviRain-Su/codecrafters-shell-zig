@@ -127,7 +127,7 @@ pub fn main() !void {
                         }
                     }
                     // and run this executable pass args
-                    try stdout.print("{s}: command not found\n", .{ .command = command });
+                    //try stdout.print("{s}: command not found\n", .{ .command = command });
                 },
             }
         }
