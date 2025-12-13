@@ -78,9 +78,11 @@ pub fn main() !void {
                     var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
                     defer argv_list.deinit(allocator);
                     const cmd_z = try allocator.dupeZ(u8, cmd_str);
+                    defer allocator.free(cmd_z);
                     try argv_list.append(allocator, cmd_z);
                     while (args.next()) |arg| {
                         const current_args = try allocator.dupeZ(u8, arg);
+                        defer allocator.free(current_args);
                         try argv_list.append(allocator, current_args);
                     }
                     // 1. 确保一定要先 append(null)
