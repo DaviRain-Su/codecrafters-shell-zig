@@ -28,10 +28,8 @@ pub fn main() !void {
                 .type => {
                     const cmd = std.meta.stringToEnum(Commands, args.peek().?) orelse .notfound;
                     switch (cmd) {
-                        .type => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
-                        .echo => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
-                        .exit => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
-                        .notfound => try stdout.print("{s}: command not found\n", .{ .command = command }),
+                        .type or .echo or .exit => try stdout.print("{s} is a shell builtin\n", .{args.peek().?}),
+                        .notfound => try stdout.print("{s}: command not found\n", .{command[args.index..]}),
                     }
                 },
                 .echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
