@@ -10,6 +10,7 @@ var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
 const stdout = &stdout_writer.interface;
 
 const Commands = enum {
+    echo,
     exit,
     notfound,
 };
@@ -20,10 +21,12 @@ pub fn main() !void {
         if (command.len == 0) {
             continue;
         } else {
-            const translated_command = std.meta.stringToEnum(Commands, command) orelse Commands.notfound;
+            var args = std.mem.tokenizeScalar(u8, command, ' ');
+            const translated_command = std.meta.stringToEnum(Commands, args.next().?) orelse Commands.notfound;
             switch (translated_command) {
+                Commands.echo => try stdout.print("{s}\n", .{command[args.index + 1 ..]}),
                 Commands.exit => return std.process.exit(0),
-                Commands.notfound => try stdout.print("{s}: command not found\n", .{command}),
+                Commands.notfound => try stdout.print("{s}: command not found\n", .{ .command = command }),
             }
         }
     }
