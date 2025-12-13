@@ -13,8 +13,12 @@ pub fn main() !void {
     // TODO: Uncomment the code below to pass the first stage
 
     while (true) {
-        try stdout.print("$ ", .{});
-        const command = try stdin.takeDelimiter('\n');
-        try stdout.print("{s}: command not found\n", .{command.?});
+        const user_input = try prompt("$ ");
+        try stdout.print("{s}: command not found\n", .{user_input});
     }
+}
+
+fn prompt(comptime question: []const u8) ![]u8 {
+    try stdout.print(question, .{});
+    return try stdin.takeDelimiter('\n') orelse "";
 }
