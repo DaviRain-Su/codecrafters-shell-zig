@@ -1,0 +1,6 @@
+echo world\ \ \ \ \ \ script
+echo before\ after
+echo test\nexample
+echo hello\\world
+echo \'hello\'
+exit

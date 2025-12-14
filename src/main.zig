@@ -57,7 +57,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
 
     var current_arg: ?std.ArrayList(u8) = null;
-    var state: enum { Normal, InSingleQuote, InDoubleQuote } = .Normal;
+    var state: enum { Normal, InSingleQuote, InDoubleQuote, BackslashEscaping } = .Normal;
 
     for (line) |c| {
         switch (state) {
@@ -80,6 +80,12 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     }
                     state = .InDoubleQuote;
                 },
+                '\\' => {
+                     if (current_arg == null) {
+                        current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
+                    }
+                    state = .BackslashEscaping;
+                },
                 else => {
                     if (current_arg == null) {
                         current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
@@ -92,7 +98,6 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     state = .Normal;
                 },
                 else => {
-                    // Inside quotes, current_arg must be initialized because we enter InQuote only after init
                     try current_arg.?.append(allocator, c);
                 },
             },
@@ -100,10 +105,23 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                 '\"' => {
                     state = .Normal;
                 },
+                '\\' => {
+                    // Handle backslash in double quotes: 
+                    // For this specific challenge stage, standard behavior for "echo" often implies 
+                    // handling backslash specially only if it escapes specific chars. 
+                    // But if we stick to the user's specific request which focused on Normal mode escaping,
+                    // we'll keep this simple: literal backslash unless we decide to support \" later.
+                    // For now, treat as literal to be safe unless instructed otherwise.
+                     try current_arg.?.append(allocator, c);
+                },
                 else => {
-                    // Inside quotes, current_arg must be initialized because we enter InQuote only after init
                     try current_arg.?.append(allocator, c);
                 },
+            },
+            .BackslashEscaping => {
+                // In this state, we just append the character literally and go back to Normal
+                try current_arg.?.append(allocator, c);
+                state = .Normal;
             },
         }
     }
