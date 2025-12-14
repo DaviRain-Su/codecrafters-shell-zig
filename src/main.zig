@@ -42,7 +42,7 @@ pub fn main() !void {
             }
         } else {
             // Treat as external command
-            try runExternalCmd(allocator, cmd_str, command_line, args);
+            try runExternalCmd(allocator, cmd_str, command_line[args.index + 1 ..]);
         }
     }
 }
@@ -164,13 +164,12 @@ fn handleType(allocator: std.mem.Allocator, args: *std.mem.TokenIterator(u8, .sc
 fn runExternalCmd(
     allocator: std.mem.Allocator,
     cmd_str: []const u8,
-    file_name: []const u8,
-    args_iter: std.mem.TokenIterator(u8, .scalar),
+    input: []const u8,
 ) !void {
     // 1. Check if executable exists in PATH
     const exec_path = try findInPath(allocator, cmd_str);
     if (exec_path == null) {
-        try stdout.print("{s}: command not found\n", .{file_name});
+        try stdout.print("{s}: command not found\n", .{cmd_str});
         return;
     }
     const dir_path_z = try allocator.dupeZ(u8, exec_path.?);
@@ -182,11 +181,11 @@ fn runExternalCmd(
     try argv_list.append(allocator, try allocator.dupeZ(u8, cmd_str));
 
     // Re-create iterator copy to traverse remaining args
-    var args = args_iter;
-    while (args.next()) |arg| {
-        const arg_z = try tokenize(allocator, arg);
-        try argv_list.append(allocator, try allocator.dupeZ(u8, arg_z));
-    }
+    //var args = args_iter;
+    //while (args.next()) |arg| {
+    const arg_z = try tokenize(allocator, input);
+    try argv_list.append(allocator, try allocator.dupeZ(u8, arg_z));
+    //}
     try argv_list.append(allocator, null);
 
     const argv_ptr: [*:null]const ?[*:0]const u8 = @ptrCast(argv_list.items.ptr);
