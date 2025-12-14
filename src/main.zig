@@ -164,13 +164,13 @@ fn handleType(allocator: std.mem.Allocator, args: *std.mem.TokenIterator(u8, .sc
 fn runExternalCmd(
     allocator: std.mem.Allocator,
     cmd_str: []const u8,
-    command_line: []const u8,
+    file_name: []const u8,
     args_iter: std.mem.TokenIterator(u8, .scalar),
 ) !void {
     // 1. Check if executable exists in PATH
     const exec_path = try findInPath(allocator, cmd_str);
     if (exec_path == null) {
-        try stdout.print("{s}: command not found\n", .{command_line});
+        try stdout.print("{s}: command not found\n", .{file_name});
         return;
     }
     const dir_path_z = try allocator.dupeZ(u8, exec_path.?);
@@ -184,7 +184,8 @@ fn runExternalCmd(
     // Re-create iterator copy to traverse remaining args
     var args = args_iter;
     while (args.next()) |arg| {
-        try argv_list.append(allocator, try allocator.dupeZ(u8, arg));
+        const arg_z = try tokenize(allocator, arg);
+        try argv_list.append(allocator, try allocator.dupeZ(u8, arg_z));
     }
     try argv_list.append(allocator, null);
 
@@ -207,12 +208,12 @@ fn runExternalCmd(
     }
 }
 
-fn findInPath(allocator: std.mem.Allocator, command_name: []const u8) !?[]const u8 {
+fn findInPath(allocator: std.mem.Allocator, file_name: []const u8) !?[]const u8 {
     const path_env = std.posix.getenv("PATH") orelse return null;
     var dirs = std.mem.splitScalar(u8, path_env, ':');
 
     while (dirs.next()) |dir| {
-        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
+        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, file_name });
         // We don't defer free(full_path) here because if found, we return it (transfer ownership to arena)
         // If not found, it will be freed when arena resets at the end of the loop, which is fine.
 
