@@ -35,9 +35,9 @@ pub fn main() !void {
         if (std.meta.stringToEnum(Commands, cmd_str)) |cmd| {
             switch (cmd) {
                 .type => try handleType(allocator, &args),
-                .echo => try handleEcho(allocator, command_line, args.index + 1),
+                .echo => try handleEcho(allocator, command_line[args.index + 1 ..]),
                 .pwd => try handlePwd(),
-                .cd => try handleCd(command_line, args.index + 1),
+                .cd => try handleCd(command_line[args.index + 1 ..]),
                 .exit => try handleExit(),
             }
         } else {
@@ -58,31 +58,23 @@ fn handlePwd() !void {
     try stdout.print("{s}\n", .{cwd});
 }
 
-fn handleCd(command_line: []const u8, start_index: usize) !void {
-    if (start_index < command_line.len) {
-        const dir = command_line[start_index..];
-        if (std.mem.eql(u8, dir, "~")) {
-            const home = std.posix.getenv("HOME") orelse return;
-            try std.process.changeCurDir(home);
-        } else {
-            std.process.changeCurDir(dir) catch {
-                try stdout.print("cd: {s}: No such file or directory\n", .{dir});
-            };
-        }
+fn handleCd(input: []const u8) !void {
+    const dir = input;
+    if (std.mem.eql(u8, dir, "~")) {
+        const home = std.posix.getenv("HOME") orelse return;
+        try std.process.changeCurDir(home);
     } else {
-        try std.process.changeCurDir("/");
+        std.process.changeCurDir(dir) catch {
+            try stdout.print("cd: {s}: No such file or directory\n", .{dir});
+        };
     }
 }
 
-fn handleEcho(allocator: std.mem.Allocator, command_line: []const u8, start_index: usize) !void {
+fn handleEcho(allocator: std.mem.Allocator, command_line: []const u8) !void {
     // echo prints the rest of the line as-is (simplified behavior)
-    if (start_index < command_line.len) {
-        const result = try innerHandleEcho(allocator, command_line, start_index);
-        try stdout.print("{s}\n", .{result});
-        allocator.free(result);
-    } else {
-        try stdout.print("\n", .{});
-    }
+    const result = try tokenize(allocator, command_line);
+    try stdout.print("{s}\n", .{result});
+    allocator.free(result);
 }
 // 定义解析器的状态
 const ParserState = enum {
@@ -90,15 +82,9 @@ const ParserState = enum {
     InQuote, // 引用模式：保留原样，寻找结束引号
 };
 
-fn innerHandleEcho(allocator: std.mem.Allocator, command_line: []const u8, start_index: usize) ![]u8 {
+fn tokenize(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
     var result = try std.ArrayList(u8).initCapacity(allocator, 1024);
     errdefer result.deinit(allocator);
-
-    if (start_index >= command_line.len) {
-        return result.toOwnedSlice(allocator);
-    }
-
-    const input = command_line[start_index..];
 
     // 初始状态
     var state = ParserState.Normal;
