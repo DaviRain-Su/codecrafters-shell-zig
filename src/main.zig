@@ -110,6 +110,12 @@ fn innerHandleEcho(allocator: std.mem.Allocator, command_line: []const u8, start
             .Normal => switch (c) {
                 // 1. 遇到单引号：切换到引用模式
                 '\'' => {
+                    // 【修复点】：在进入引号前，如果之前欠了一个空格，必须先补上！
+                    // 比如: echo 'a' 'b' -> 中间的空格会在这里被补上
+                    if (pending_space) {
+                        try result.append(allocator, ' ');
+                        pending_space = false;
+                    }
                     state = .InQuote;
                 },
                 // 2. 遇到空格：标记需要空格，但不立即写入（实现压缩）
