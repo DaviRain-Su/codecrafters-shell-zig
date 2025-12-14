@@ -34,7 +34,7 @@ pub fn main() !void {
         if (std.meta.stringToEnum(Commands, cmd_str)) |cmd| {
             switch (cmd) {
                 .type => try handleType(allocator, &args),
-                .echo => try handleEcho(command_line, args.index),
+                .echo => try handleEcho(command_line, args.index + 1),
                 .pwd => try handlePwd(),
                 .exit => try handleExit(),
             }
