@@ -57,7 +57,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
 
     var current_arg: ?std.ArrayList(u8) = null;
-    var state: enum { Normal, InQuote } = .Normal;
+    var state: enum { Normal, InSingleQuote, InDoubleQuote } = .Normal;
 
     for (line) |c| {
         switch (state) {
@@ -68,11 +68,17 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                         current_arg = null;
                     }
                 },
-                '\'', '\"' => {
+                '\'' => {
                     if (current_arg == null) {
                         current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
                     }
-                    state = .InQuote;
+                    state = .InSingleQuote;
+                },
+                '\"' => {
+                    if (current_arg == null) {
+                        current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
+                    }
+                    state = .InDoubleQuote;
                 },
                 else => {
                     if (current_arg == null) {
@@ -81,8 +87,17 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     try current_arg.?.append(allocator, c);
                 },
             },
-            .InQuote => switch (c) {
-                '\'', '\"' => {
+            .InSingleQuote => switch (c) {
+                '\'' => {
+                    state = .Normal;
+                },
+                else => {
+                    // Inside quotes, current_arg must be initialized because we enter InQuote only after init
+                    try current_arg.?.append(allocator, c);
+                },
+            },
+            .InDoubleQuote => switch (c) {
+                '\"' => {
                     state = .Normal;
                 },
                 else => {
