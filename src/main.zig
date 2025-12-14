@@ -53,7 +53,6 @@ fn prompt(comptime question: []const u8) ![]u8 {
 fn handlePwd() !void {
     var out_buffer: [1024]u8 = [_]u8{0} ** 1024;
     const cwd = try std.process.getCwd(&out_buffer);
-    std.debug.print("debug:{s}\n", .{out_buffer});
     try stdout.print("{s}\n", .{cwd});
 }
 
