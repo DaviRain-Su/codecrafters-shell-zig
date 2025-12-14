@@ -61,9 +61,14 @@ fn handlePwd() !void {
 fn handleCd(command_line: []const u8, start_index: usize) !void {
     if (start_index < command_line.len) {
         const dir = command_line[start_index..];
-        std.process.changeCurDir(dir) catch {
-            try stdout.print("cd: {s}: No such file or directory\n", .{dir});
-        };
+        if (std.mem.eql(u8, dir, "~")) {
+            const home = std.posix.getenv("HOME") orelse return;
+            try std.process.changeCurDir(home);
+        } else {
+            std.process.changeCurDir(dir) catch {
+                try stdout.print("cd: {s}: No such file or directory\n", .{dir});
+            };
+        }
     } else {
         try std.process.changeCurDir("/");
     }
