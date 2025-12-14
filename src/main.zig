@@ -13,6 +13,7 @@ const Commands = enum {
     echo,
     exit,
     pwd,
+    cd,
 };
 
 pub fn main() !void {
@@ -36,6 +37,7 @@ pub fn main() !void {
                 .type => try handleType(allocator, &args),
                 .echo => try handleEcho(command_line, args.index + 1),
                 .pwd => try handlePwd(),
+                .cd => try handleCd(command_line, args.index + 1),
                 .exit => try handleExit(),
             }
         } else {
@@ -54,6 +56,15 @@ fn handlePwd() !void {
     var out_buffer: [1024]u8 = [_]u8{0} ** 1024;
     const cwd = try std.process.getCwd(&out_buffer);
     try stdout.print("{s}\n", .{cwd});
+}
+
+fn handleCd(command_line: []const u8, start_index: usize) !void {
+    if (start_index < command_line.len) {
+        const dir = command_line[start_index..];
+        try std.process.changeCurDir(dir);
+    } else {
+        try std.process.changeCurDir("/");
+    }
 }
 
 fn handleEcho(command_line: []const u8, start_index: usize) !void {
