@@ -12,6 +12,7 @@ const Commands = enum {
     type,
     echo,
     exit,
+    pwd,
 };
 
 pub fn main() !void {
@@ -26,6 +27,7 @@ pub fn main() !void {
         if (command_line.len == 0) continue;
 
         var args = std.mem.tokenizeScalar(u8, command_line, ' ');
+        // get the first argument
         const cmd_str = args.next() orelse continue;
 
         // Check for builtins first
@@ -33,6 +35,7 @@ pub fn main() !void {
             switch (cmd) {
                 .type => try handleType(allocator, &args),
                 .echo => try handleEcho(command_line, args.index),
+                .pwd => try handlePwd(),
                 .exit => try handleExit(),
             }
         } else {
@@ -45,6 +48,13 @@ pub fn main() !void {
 fn prompt(comptime question: []const u8) ![]u8 {
     try stdout.print(question, .{});
     return try stdin.takeDelimiter('\n') orelse "";
+}
+
+fn handlePwd() !void {
+    var out_buffer: [1024]u8 = [_]u8{0} ** 1024;
+    const cwd = try std.process.getCwd(&out_buffer);
+    std.debug.print("debug:{s}\n", .{out_buffer});
+    try stdout.print("{s}\n", .{cwd});
 }
 
 fn handleEcho(command_line: []const u8, start_index: usize) !void {
@@ -60,6 +70,7 @@ fn handleExit() !void {
     std.process.exit(0);
 }
 
+// 处理剩余的参数
 fn handleType(allocator: std.mem.Allocator, args: *std.mem.TokenIterator(u8, .scalar)) !void {
     const target_cmd = args.next() orelse return;
 
