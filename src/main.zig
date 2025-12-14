@@ -55,7 +55,7 @@ fn prompt(comptime question: []const u8) ![]u8 {
 
 fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8 {
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
-    
+
     var current_arg: ?std.ArrayList(u8) = null;
     var state: enum { Normal, InQuote } = .Normal;
 
@@ -68,7 +68,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                         current_arg = null;
                     }
                 },
-                '\'' => {
+                '\'', '\"' => {
                     if (current_arg == null) {
                         current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
                     }
@@ -79,17 +79,17 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                         current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
                     }
                     try current_arg.?.append(allocator, c);
-                }
+                },
             },
             .InQuote => switch (c) {
-                '\'' => {
+                '\'', '\"' => {
                     state = .Normal;
                 },
                 else => {
-                     // Inside quotes, current_arg must be initialized because we enter InQuote only after init
+                    // Inside quotes, current_arg must be initialized because we enter InQuote only after init
                     try current_arg.?.append(allocator, c);
-                }
-            }
+                },
+            },
         }
     }
 
@@ -99,7 +99,6 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
 
     return args.toOwnedSlice(allocator);
 }
-
 
 fn handlePwd() !void {
     var out_buffer: [1024]u8 = [_]u8{0} ** 1024;
@@ -112,7 +111,7 @@ fn handleCd(args: []const []const u8) !void {
     if (args.len > 1) {
         dir = args[1];
     }
-    
+
     if (std.mem.eql(u8, dir, "~")) {
         const home = std.posix.getenv("HOME") orelse return;
         try std.process.changeCurDir(home);
@@ -164,7 +163,7 @@ fn runExternalCmd(
     argv: []const []const u8,
 ) !void {
     const cmd_str = argv[0];
-    
+
     // 1. Check if executable exists in PATH
     const exec_path = try findInPath(allocator, cmd_str);
     if (exec_path == null) {
@@ -176,7 +175,7 @@ fn runExternalCmd(
     // 2. Prepare argv
     var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, argv.len + 1);
     defer argv_list.deinit(allocator);
-    
+
     for (argv) |arg| {
         try argv_list.append(allocator, try allocator.dupeZ(u8, arg));
     }
