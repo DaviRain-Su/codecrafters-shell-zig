@@ -27,22 +27,23 @@ pub fn main() !void {
         const command_line = try prompt("$ ");
         if (command_line.len == 0) continue;
 
-        var args = std.mem.tokenizeScalar(u8, command_line, ' ');
-        // get the first argument
-        const cmd_str = args.next() orelse continue;
+        const args = try parseArgs(allocator, command_line);
+        if (args.len == 0) continue;
+
+        const cmd_str = args[0];
 
         // Check for builtins first
         if (std.meta.stringToEnum(Commands, cmd_str)) |cmd| {
             switch (cmd) {
-                .type => try handleType(allocator, &args),
-                .echo => try handleEcho(allocator, command_line[args.index + 1 ..]),
+                .type => try handleType(allocator, args),
+                .echo => try handleEcho(args[1..]),
                 .pwd => try handlePwd(),
-                .cd => try handleCd(command_line[args.index + 1 ..]),
-                .exit => try handleExit(),
+                .cd => try handleCd(args),
+                .exit => try handleExit(args),
             }
         } else {
             // Treat as external command
-            try runExternalCmd(allocator, cmd_str, command_line[args.index + 1 ..]);
+            try runExternalCmd(allocator, args);
         }
     }
 }
@@ -52,14 +53,66 @@ fn prompt(comptime question: []const u8) ![]u8 {
     return try stdin.takeDelimiter('\n') orelse "";
 }
 
+fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8 {
+    var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
+    
+    var current_arg: ?std.ArrayList(u8) = null;
+    var state: enum { Normal, InQuote } = .Normal;
+
+    for (line) |c| {
+        switch (state) {
+            .Normal => switch (c) {
+                ' ' => {
+                    if (current_arg) |*arg| {
+                        try args.append(allocator, try arg.toOwnedSlice(allocator));
+                        current_arg = null;
+                    }
+                },
+                '\'' => {
+                    if (current_arg == null) {
+                        current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
+                    }
+                    state = .InQuote;
+                },
+                else => {
+                    if (current_arg == null) {
+                        current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
+                    }
+                    try current_arg.?.append(allocator, c);
+                }
+            },
+            .InQuote => switch (c) {
+                '\'' => {
+                    state = .Normal;
+                },
+                else => {
+                     // Inside quotes, current_arg must be initialized because we enter InQuote only after init
+                    try current_arg.?.append(allocator, c);
+                }
+            }
+        }
+    }
+
+    if (current_arg) |*arg| {
+        try args.append(allocator, try arg.toOwnedSlice(allocator));
+    }
+
+    return args.toOwnedSlice(allocator);
+}
+
+
 fn handlePwd() !void {
     var out_buffer: [1024]u8 = [_]u8{0} ** 1024;
     const cwd = try std.process.getCwd(&out_buffer);
     try stdout.print("{s}\n", .{cwd});
 }
 
-fn handleCd(input: []const u8) !void {
-    const dir = input;
+fn handleCd(args: []const []const u8) !void {
+    var dir: []const u8 = "~";
+    if (args.len > 1) {
+        dir = args[1];
+    }
+    
     if (std.mem.eql(u8, dir, "~")) {
         const home = std.posix.getenv("HOME") orelse return;
         try std.process.changeCurDir(home);
@@ -70,82 +123,27 @@ fn handleCd(input: []const u8) !void {
     }
 }
 
-fn handleEcho(allocator: std.mem.Allocator, command_line: []const u8) !void {
-    // echo prints the rest of the line as-is (simplified behavior)
-    const result = try tokenize(allocator, command_line);
-    try stdout.print("{s}\n", .{result});
-    allocator.free(result);
-}
-// 定义解析器的状态
-const ParserState = enum {
-    Normal, // 普通模式：压缩空格，识别引号
-    InQuote, // 引用模式：保留原样，寻找结束引号
-};
-
-fn tokenize(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
-    var result = try std.ArrayList(u8).initCapacity(allocator, 1024);
-    errdefer result.deinit(allocator);
-
-    // 初始状态
-    var state = ParserState.Normal;
-    var pending_space = false; // 用于标记“是否欠一个空格”
-
-    for (input) |c| {
-        switch (state) {
-            // === 状态 1: 普通模式 ===
-            .Normal => switch (c) {
-                // 1. 遇到单引号：切换到引用模式
-                '\'' => {
-                    // 【修复点】：在进入引号前，如果之前欠了一个空格，必须先补上！
-                    // 比如: echo 'a' 'b' -> 中间的空格会在这里被补上
-                    if (pending_space) {
-                        try result.append(allocator, ' ');
-                        pending_space = false;
-                    }
-                    state = .InQuote;
-                },
-                // 2. 遇到空格：标记需要空格，但不立即写入（实现压缩）
-                ' ' => {
-                    // 只有当结果不为空时才需要处理空格（忽略开头的空格）
-                    if (result.items.len > 0) {
-                        pending_space = true;
-                    }
-                },
-                // 3. 其他字符：写入
-                else => {
-                    // 如果之前欠了一个空格，现在补上
-                    if (pending_space) {
-                        try result.append(allocator, ' ');
-                        pending_space = false;
-                    }
-                    try result.append(allocator, c);
-                },
-            },
-
-            // === 状态 2: 引用模式 (单引号内) ===
-            .InQuote => switch (c) {
-                // 1. 遇到单引号：结束引用，切回普通模式
-                '\'' => {
-                    state = .Normal;
-                },
-                // 2. 其他任何字符（包括空格）：原样写入
-                else => {
-                    try result.append(allocator, c);
-                },
-            },
+fn handleEcho(args: []const []const u8) !void {
+    for (args, 0..) |arg, i| {
+        try stdout.print("{s}", .{arg});
+        if (i < args.len - 1) {
+            try stdout.print(" ", .{});
         }
     }
-
-    return result.toOwnedSlice(allocator);
+    try stdout.print("\n", .{});
 }
 
-fn handleExit() !void {
-    std.process.exit(0);
+fn handleExit(args: []const []const u8) !void {
+    var code: u8 = 0;
+    if (args.len > 1) {
+        code = std.fmt.parseInt(u8, args[1], 10) catch 0;
+    }
+    std.process.exit(code);
 }
 
-// 处理剩余的参数
-fn handleType(allocator: std.mem.Allocator, args: *std.mem.TokenIterator(u8, .scalar)) !void {
-    const target_cmd = args.next() orelse return;
+fn handleType(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    if (args.len < 2) return;
+    const target_cmd = args[1];
 
     // Check if it's a builtin
     if (std.meta.stringToEnum(Commands, target_cmd)) |_| {
@@ -163,9 +161,10 @@ fn handleType(allocator: std.mem.Allocator, args: *std.mem.TokenIterator(u8, .sc
 
 fn runExternalCmd(
     allocator: std.mem.Allocator,
-    cmd_str: []const u8,
-    input: []const u8,
+    argv: []const []const u8,
 ) !void {
+    const cmd_str = argv[0];
+    
     // 1. Check if executable exists in PATH
     const exec_path = try findInPath(allocator, cmd_str);
     if (exec_path == null) {
@@ -175,17 +174,12 @@ fn runExternalCmd(
     const dir_path_z = try allocator.dupeZ(u8, exec_path.?);
 
     // 2. Prepare argv
-    var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, 10);
+    var argv_list = try std.ArrayList(?[*:0]const u8).initCapacity(allocator, argv.len + 1);
     defer argv_list.deinit(allocator);
-    // argv[0] is the command itself
-    try argv_list.append(allocator, try allocator.dupeZ(u8, cmd_str));
-
-    // Re-create iterator copy to traverse remaining args
-    //var args = args_iter;
-    //while (args.next()) |arg| {
-    const arg_z = try tokenize(allocator, input);
-    try argv_list.append(allocator, try allocator.dupeZ(u8, arg_z));
-    //}
+    
+    for (argv) |arg| {
+        try argv_list.append(allocator, try allocator.dupeZ(u8, arg));
+    }
     try argv_list.append(allocator, null);
 
     const argv_ptr: [*:null]const ?[*:0]const u8 = @ptrCast(argv_list.items.ptr);
@@ -207,12 +201,12 @@ fn runExternalCmd(
     }
 }
 
-fn findInPath(allocator: std.mem.Allocator, file_name: []const u8) !?[]const u8 {
+fn findInPath(allocator: std.mem.Allocator, command_name: []const u8) !?[]const u8 {
     const path_env = std.posix.getenv("PATH") orelse return null;
     var dirs = std.mem.splitScalar(u8, path_env, ':');
 
     while (dirs.next()) |dir| {
-        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, file_name });
+        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir, command_name });
         // We don't defer free(full_path) here because if found, we return it (transfer ownership to arena)
         // If not found, it will be freed when arena resets at the end of the loop, which is fine.
 
