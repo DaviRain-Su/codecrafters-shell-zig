@@ -35,7 +35,7 @@ pub fn main() !void {
         if (std.meta.stringToEnum(Commands, cmd_str)) |cmd| {
             switch (cmd) {
                 .type => try handleType(allocator, &args),
-                .echo => try handleEcho(command_line, args.index + 1),
+                .echo => try handleEcho(allocator, command_line, args.index + 1),
                 .pwd => try handlePwd(),
                 .cd => try handleCd(command_line, args.index + 1),
                 .exit => try handleExit(),
@@ -74,13 +74,77 @@ fn handleCd(command_line: []const u8, start_index: usize) !void {
     }
 }
 
-fn handleEcho(command_line: []const u8, start_index: usize) !void {
+fn handleEcho(allocator: std.mem.Allocator, command_line: []const u8, start_index: usize) !void {
     // echo prints the rest of the line as-is (simplified behavior)
     if (start_index < command_line.len) {
-        try stdout.print("{s}\n", .{command_line[start_index..]});
+        const result = try innerHandleEcho(allocator, command_line, start_index);
+        try stdout.print("{s}\n", .{result});
+        allocator.free(result);
     } else {
         try stdout.print("\n", .{});
     }
+}
+// 定义解析器的状态
+const ParserState = enum {
+    Normal, // 普通模式：压缩空格，识别引号
+    InQuote, // 引用模式：保留原样，寻找结束引号
+};
+
+fn innerHandleEcho(allocator: std.mem.Allocator, command_line: []const u8, start_index: usize) ![]u8 {
+    var result = try std.ArrayList(u8).initCapacity(allocator, 1024);
+    errdefer result.deinit(allocator);
+
+    if (start_index >= command_line.len) {
+        return result.toOwnedSlice(allocator);
+    }
+
+    const input = command_line[start_index..];
+
+    // 初始状态
+    var state = ParserState.Normal;
+    var pending_space = false; // 用于标记“是否欠一个空格”
+
+    for (input) |c| {
+        switch (state) {
+            // === 状态 1: 普通模式 ===
+            .Normal => switch (c) {
+                // 1. 遇到单引号：切换到引用模式
+                '\'' => {
+                    state = .InQuote;
+                },
+                // 2. 遇到空格：标记需要空格，但不立即写入（实现压缩）
+                ' ' => {
+                    // 只有当结果不为空时才需要处理空格（忽略开头的空格）
+                    if (result.items.len > 0) {
+                        pending_space = true;
+                    }
+                },
+                // 3. 其他字符：写入
+                else => {
+                    // 如果之前欠了一个空格，现在补上
+                    if (pending_space) {
+                        try result.append(allocator, ' ');
+                        pending_space = false;
+                    }
+                    try result.append(allocator, c);
+                },
+            },
+
+            // === 状态 2: 引用模式 (单引号内) ===
+            .InQuote => switch (c) {
+                // 1. 遇到单引号：结束引用，切回普通模式
+                '\'' => {
+                    state = .Normal;
+                },
+                // 2. 其他任何字符（包括空格）：原样写入
+                else => {
+                    try result.append(allocator, c);
+                },
+            },
+        }
+    }
+
+    return result.toOwnedSlice(allocator);
 }
 
 fn handleExit() !void {
