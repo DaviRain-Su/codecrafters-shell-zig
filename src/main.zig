@@ -61,7 +61,9 @@ fn handlePwd() !void {
 fn handleCd(command_line: []const u8, start_index: usize) !void {
     if (start_index < command_line.len) {
         const dir = command_line[start_index..];
-        try std.process.changeCurDir(dir);
+        std.process.changeCurDir(dir) catch {
+            try stdout.print("cd: {s}: No such file or directory\n", .{dir});
+        };
     } else {
         try std.process.changeCurDir("/");
     }
