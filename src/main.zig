@@ -107,7 +107,6 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     state = .InDoubleQuote;
                 },
                 '\\' => {
-                    // try current_arg.?.append(allocator, '\\');
                     try current_arg.?.append(allocator, '\\');
                     state = .InDoubleQuote;
                 },
@@ -117,9 +116,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     state = .InDoubleQuote;
                 },
                 else => {
-                    // For any other character after a backslash, just append the character.
-                    // This effectively removes the backslash, which is a common simplification
-                    // in basic shell implementations.
+                    try current_arg.?.append(allocator, '\\');
                     try current_arg.?.append(allocator, c);
                     state = .InDoubleQuote;
                 },
