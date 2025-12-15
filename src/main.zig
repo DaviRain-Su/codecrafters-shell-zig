@@ -107,7 +107,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     state = .InDoubleQuote;
                 },
                 '\\' => {
-                    try current_arg.?.append(allocator, '\\');
+                    // try current_arg.?.append(allocator, '\\');
                     try current_arg.?.append(allocator, '\\');
                     state = .InDoubleQuote;
                 },
