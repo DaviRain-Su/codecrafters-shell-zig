@@ -209,6 +209,7 @@ fn handleEcho(args: []const []const u8, output_file_path: ?[]const u8) !void {
             }
         }
         try writer.print("\n", .{});
+        try writer.flush();
     } else {
         for (args, 0..) |arg, i| {
             try stdout.print("{s}", .{arg});
