@@ -18,7 +18,12 @@ const Commands = enum {
 
 const ParsedCommand = struct {
     args: []const []const u8,
-    stdout_file: ?[]const u8,
+    output_file_path: ?OutputFilePath,
+};
+
+const OutputFilePath = union(enum) {
+    stdout: []const u8,
+    stderr: []const u8,
 };
 
 fn parseCommand(args: []const []const u8) ParsedCommand {
@@ -27,12 +32,19 @@ fn parseCommand(args: []const []const u8) ParsedCommand {
             if (i + 1 < args.len) {
                 return ParsedCommand{
                     .args = args[0..i],
-                    .stdout_file = args[i + 1],
+                    .output_file_path = OutputFilePath{ .stdout = args[i + 1] },
+                };
+            }
+        } else if (std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>")) {
+            if (i + 1 < args.len) {
+                return ParsedCommand{
+                    .args = args[0..i],
+                    .output_file_path = OutputFilePath{ .stderr = args[i + 1] },
                 };
             }
         }
     }
-    return ParsedCommand{ .args = args, .stdout_file = null };
+    return ParsedCommand{ .args = args, .output_file_path = null };
 }
 
 pub fn main() !void {
@@ -56,14 +68,14 @@ pub fn main() !void {
         if (std.meta.stringToEnum(Commands, cmd_str)) |cmd| {
             switch (cmd) {
                 .type => try handleType(allocator, parsed_cmd.args),
-                .echo => try handleEcho(parsed_cmd.args[1..], parsed_cmd.stdout_file),
+                .echo => try handleEcho(parsed_cmd.args[1..], parsed_cmd.output_file_path),
                 .pwd => try handlePwd(),
                 .cd => try handleCd(parsed_cmd.args),
                 .exit => try handleExit(parsed_cmd.args),
             }
         } else {
             // Treat as external command
-            try runExternalCmd(allocator, parsed_cmd.args, parsed_cmd.stdout_file);
+            try runExternalCmd(allocator, parsed_cmd.args, parsed_cmd.output_file_path);
         }
     }
 }
@@ -189,17 +201,20 @@ fn handleCd(args: []const []const u8) !void {
     }
 }
 
-fn handleEcho(args: []const []const u8, output_file_path: ?[]const u8) !void {
+fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void {
     var output_file: ?std.fs.File = null;
 
     if (output_file_path) |filename| {
-        output_file = try std.fs.cwd().createFile(filename, .{});
+        switch (filename) {
+            .stderr, .stdout => |path| {
+                output_file = try std.fs.cwd().createFile(path, .{});
+            },
+        }
     }
     defer if (output_file) |f| f.close();
 
     if (output_file) |file| {
         // Create a streaming writer for the file
-        //var buf: [4096]u8 = undefined;
         var writer_impl = file.writerStreaming(&.{});
         var writer = &writer_impl.interface;
         for (args, 0..) |arg, i| {
@@ -209,7 +224,6 @@ fn handleEcho(args: []const []const u8, output_file_path: ?[]const u8) !void {
             }
         }
         try writer.print("\n", .{});
-        //try writer.flush();
     } else {
         for (args, 0..) |arg, i| {
             try stdout.print("{s}", .{arg});
@@ -250,7 +264,7 @@ fn handleType(allocator: std.mem.Allocator, args: []const []const u8) !void {
 fn runExternalCmd(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
-    redirect_file: ?[]const u8,
+    redirect_file: ?OutputFilePath,
 ) !void {
     const cmd_str = argv[0];
 
@@ -282,10 +296,20 @@ fn runExternalCmd(
     if (pid == 0) {
         // Child process
         if (redirect_file) |file_path| {
-            const file = try std.fs.cwd().createFile(file_path, .{});
-            // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
-            _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
-            file.close();
+            switch (file_path) {
+                .stdout => |path| {
+                    const file = try std.fs.cwd().createFile(path, .{});
+                    // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
+                    _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
+                    file.close();
+                },
+                .stderr => |path| {
+                    const file = try std.fs.cwd().createFile(path, .{});
+                    // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)。
+                    _ = try std.posix.dup2(file.handle, std.posix.STDERR_FILENO);
+                    file.close();
+                },
+            }
         }
 
         const err = std.posix.execveZ(dir_path_z, argv_ptr, envp);
