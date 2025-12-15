@@ -28,6 +28,9 @@ pub fn main() !void {
         if (command_line.len == 0) continue;
 
         const args = try parseArgs(allocator, command_line);
+        //for (args) |value| {
+        //try stdout.print("{s}\n", .{value});
+        //}
         if (args.len == 0) continue;
 
         const cmd_str = args[0];
@@ -170,13 +173,42 @@ fn handleCd(args: []const []const u8) !void {
 }
 
 fn handleEcho(args: []const []const u8) !void {
+    var output_file: ?std.fs.File = null;
+    var args_to_print = args;
+
+    // Scan for redirection operator
     for (args, 0..) |arg, i| {
-        try stdout.print("{s}", .{arg});
-        if (i < args.len - 1) {
-            try stdout.print(" ", .{});
+        if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
+            if (i + 1 < args.len) {
+                const filename = args[i + 1];
+                output_file = try std.fs.cwd().createFile(filename, .{});
+                args_to_print = args[0..i];
+            }
+            break;
         }
     }
-    try stdout.print("\n", .{});
+    defer if (output_file) |f| f.close();
+
+    if (output_file) |file| {
+        // Create a streaming writer for the file
+        var writer_impl = file.writerStreaming(&.{});
+        const writer = &writer_impl.interface;
+        for (args_to_print, 0..) |arg, i| {
+            try writer.print("{s}", .{arg});
+            if (i < args_to_print.len - 1) {
+                try writer.print(" ", .{});
+            }
+        }
+        try writer.print("\n", .{});
+    } else {
+        for (args_to_print, 0..) |arg, i| {
+            try stdout.print("{s}", .{arg});
+            if (i < args_to_print.len - 1) {
+                try stdout.print(" ", .{});
+            }
+        }
+        try stdout.print("\n", .{});
+    }
 }
 
 fn handleExit(args: []const []const u8) !void {

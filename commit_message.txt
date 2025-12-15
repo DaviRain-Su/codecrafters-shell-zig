@@ -1,0 +1,5 @@
+Fix(parseArgs): Preserve backslash in double quotes for non-special chars
+
+- In double quotes, a backslash is now preserved if it precedes a character that is not `"` or `\`.
+- This aligns with standard shell behavior where `"\a"` is interpreted as `\a` (literal backslash) rather than just `a`.
+- Fixes issues where file paths containing backslashes were incorrectly parsed when double-quoted.
