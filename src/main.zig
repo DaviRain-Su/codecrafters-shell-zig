@@ -57,7 +57,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
 
     var current_arg: ?std.ArrayList(u8) = null;
-    var state: enum { Normal, InSingleQuote, InDoubleQuote, BackslashEscaping } = .Normal;
+    var state: enum { Normal, InSingleQuote, InDoubleQuote, BackslashEscaping, BackSlashEscapingInSingleQuote, BackSlashEscapingInDoubleQuote } = .Normal;
 
     for (line) |c| {
         switch (state) {
@@ -74,14 +74,14 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     }
                     state = .InSingleQuote;
                 },
-                '\"' => {
+                '"' => {
                     if (current_arg == null) {
                         current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
                     }
                     state = .InDoubleQuote;
                 },
                 '\\' => {
-                     if (current_arg == null) {
+                    if (current_arg == null) {
                         current_arg = try std.ArrayList(u8).initCapacity(allocator, 16);
                     }
                     state = .BackslashEscaping;
@@ -97,22 +97,51 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                 '\'' => {
                     state = .Normal;
                 },
+                '\\' => {
+                    try current_arg.?.append(allocator, '\\');
+                    state = .BackSlashEscapingInSingleQuote;
+                },
                 else => {
                     try current_arg.?.append(allocator, c);
                 },
             },
+            .BackSlashEscapingInSingleQuote => switch (c) {
+                '\'' => {
+                    try current_arg.?.append(allocator, '\'');
+                    state = .InSingleQuote;
+                },
+                '\\' => {
+                    try current_arg.?.append(allocator, '\\');
+                    state = .InSingleQuote;
+                },
+                else => {
+                    try current_arg.?.append(allocator, c);
+                    state = .InSingleQuote;
+                },
+            },
+            .BackSlashEscapingInDoubleQuote => switch (c) {
+                '"' => {
+                    try current_arg.?.append(allocator, c);
+                    state = .InDoubleQuote;
+                },
+                else => {
+                    try current_arg.?.append(allocator, '\\');
+                    try current_arg.?.append(allocator, c);
+                    state = .InDoubleQuote;
+                },
+            },
             .InDoubleQuote => switch (c) {
-                '\"' => {
+                '"' => {
                     state = .Normal;
                 },
                 '\\' => {
-                    // Handle backslash in double quotes: 
-                    // For this specific challenge stage, standard behavior for "echo" often implies 
-                    // handling backslash specially only if it escapes specific chars. 
+                    // Handle backslash in double quotes:
+                    // For this specific challenge stage, standard behavior for "echo" often implies
+                    // handling backslash specially only if it escapes specific chars.
                     // But if we stick to the user's specific request which focused on Normal mode escaping,
                     // we'll keep this simple: literal backslash unless we decide to support \" later.
                     // For now, treat as literal to be safe unless instructed otherwise.
-                     try current_arg.?.append(allocator, c);
+                    state = .BackSlashEscapingInDoubleQuote;
                 },
                 else => {
                     try current_arg.?.append(allocator, c);
