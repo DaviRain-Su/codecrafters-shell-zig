@@ -26,25 +26,36 @@ const OutputFilePath = union(enum) {
     stderr: []const u8,
 };
 
-fn parseCommand(args: []const []const u8) ParsedCommand {
-    for (args, 0..) |arg, i| {
+fn parseCommand(allocator: std.mem.Allocator, args: []const []const u8) !ParsedCommand {
+    var clean_args = try std.ArrayList([]const u8).initCapacity(allocator, args.len);
+    var output_file_path: ?OutputFilePath = null;
+
+    var i: usize = 0;
+    while (i < args.len) {
+        const arg = args[i];
         if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
             if (i + 1 < args.len) {
-                return ParsedCommand{
-                    .args = args[0..i],
-                    .output_file_path = OutputFilePath{ .stdout = args[i + 1] },
-                };
+                output_file_path = OutputFilePath{ .stdout = args[i + 1] };
+                i += 2; // Skip operator and filename
+                continue;
             }
-        } else if (std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>")) {
+        } else if (std.mem.eql(u8, arg, "2>")) {
             if (i + 1 < args.len) {
-                return ParsedCommand{
-                    .args = args[0..i],
-                    .output_file_path = OutputFilePath{ .stderr = args[i + 1] },
-                };
+                output_file_path = OutputFilePath{ .stderr = args[i + 1] };
+                i += 2; // Skip operator and filename
+                continue;
             }
         }
+
+        try clean_args.append(allocator, arg);
+
+        i += 1;
     }
-    return ParsedCommand{ .args = args, .output_file_path = null };
+
+    return ParsedCommand{
+        .args = try clean_args.toOwnedSlice(allocator),
+        .output_file_path = output_file_path,
+    };
 }
 
 pub fn main() !void {
@@ -61,7 +72,7 @@ pub fn main() !void {
         const args = try parseArgs(allocator, command_line);
         if (args.len == 0) continue;
 
-        const parsed_cmd = parseCommand(args);
+        const parsed_cmd = try parseCommand(allocator, args);
         const cmd_str = parsed_cmd.args[0];
 
         // Check for builtins first
