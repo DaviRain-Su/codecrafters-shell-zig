@@ -124,6 +124,10 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     try current_arg.?.append(allocator, c);
                     state = .InDoubleQuote;
                 },
+                '\\' => {
+                    try current_arg.?.append(allocator, '\\');
+                    state = .InDoubleQuote;
+                },
                 else => {
                     try current_arg.?.append(allocator, '\\');
                     try current_arg.?.append(allocator, c);
