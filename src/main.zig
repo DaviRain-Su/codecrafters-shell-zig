@@ -57,7 +57,7 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
     var args = try std.ArrayList([]const u8).initCapacity(allocator, 10);
 
     var current_arg: ?std.ArrayList(u8) = null;
-    var state: enum { Normal, InSingleQuote, InDoubleQuote, BackslashEscaping, BackSlashEscapingInSingleQuote, BackSlashEscapingInDoubleQuote } = .Normal;
+    var state: enum { Normal, InSingleQuote, InDoubleQuote, BackslashEscaping, BackSlashEscapingInDoubleQuote } = .Normal;
 
     for (line) |c| {
         switch (state) {
@@ -97,26 +97,8 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                 '\'' => {
                     state = .Normal;
                 },
-                '\\' => {
-                    try current_arg.?.append(allocator, '\\');
-                    state = .BackSlashEscapingInSingleQuote;
-                },
                 else => {
                     try current_arg.?.append(allocator, c);
-                },
-            },
-            .BackSlashEscapingInSingleQuote => switch (c) {
-                '\'' => {
-                    try current_arg.?.append(allocator, '\'');
-                    state = .InSingleQuote;
-                },
-                '\\' => {
-                    try current_arg.?.append(allocator, '\\');
-                    state = .InSingleQuote;
-                },
-                else => {
-                    try current_arg.?.append(allocator, c);
-                    state = .InSingleQuote;
                 },
             },
             .BackSlashEscapingInDoubleQuote => switch (c) {
@@ -129,7 +111,9 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     state = .InDoubleQuote;
                 },
                 else => {
-                    try current_arg.?.append(allocator, '\\');
+                    // For any other character after a backslash, just append the character.
+                    // This effectively removes the backslash, which is a common simplification
+                    // in basic shell implementations.
                     try current_arg.?.append(allocator, c);
                     state = .InDoubleQuote;
                 },
@@ -139,12 +123,6 @@ fn parseArgs(allocator: std.mem.Allocator, line: []const u8) ![]const []const u8
                     state = .Normal;
                 },
                 '\\' => {
-                    // Handle backslash in double quotes:
-                    // For this specific challenge stage, standard behavior for "echo" often implies
-                    // handling backslash specially only if it escapes specific chars.
-                    // But if we stick to the user's specific request which focused on Normal mode escaping,
-                    // we'll keep this simple: literal backslash unless we decide to support \" later.
-                    // For now, treat as literal to be safe unless instructed otherwise.
                     state = .BackSlashEscapingInDoubleQuote;
                 },
                 else => {
