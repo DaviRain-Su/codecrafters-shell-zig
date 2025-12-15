@@ -239,8 +239,22 @@ fn handleType(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 fn runExternalCmd(
     allocator: std.mem.Allocator,
-    argv: []const []const u8,
+    argv_in: []const []const u8,
 ) !void {
+    var argv = argv_in;
+    var redirect_file: ?[]const u8 = null;
+
+    // Check for redirection
+    for (argv, 0..) |arg, i| {
+        if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
+            if (i + 1 < argv.len) {
+                redirect_file = argv[i + 1];
+                argv = argv[0..i];
+            }
+            break;
+        }
+    }
+
     const cmd_str = argv[0];
 
     // 1. Check if executable exists in PATH
@@ -270,6 +284,13 @@ fn runExternalCmd(
     const pid = try std.posix.fork();
     if (pid == 0) {
         // Child process
+        if (redirect_file) |file_path| {
+            const file = try std.fs.cwd().createFile(file_path, .{});
+            // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
+            _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
+            file.close();
+        }
+
         const err = std.posix.execveZ(dir_path_z, argv_ptr, envp);
         std.debug.print("Exec failed: {}\n", .{err});
         std.posix.exit(1);
