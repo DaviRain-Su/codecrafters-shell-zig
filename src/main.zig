@@ -16,6 +16,25 @@ const Commands = enum {
     cd,
 };
 
+const ParsedCommand = struct {
+    args: []const []const u8,
+    stdout_file: ?[]const u8,
+};
+
+fn parseCommand(args: []const []const u8) ParsedCommand {
+    for (args, 0..) |arg, i| {
+        if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
+            if (i + 1 < args.len) {
+                return ParsedCommand{
+                    .args = args[0..i],
+                    .stdout_file = args[i + 1],
+                };
+            }
+        }
+    }
+    return ParsedCommand{ .args = args, .stdout_file = null };
+}
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -28,25 +47,23 @@ pub fn main() !void {
         if (command_line.len == 0) continue;
 
         const args = try parseArgs(allocator, command_line);
-        //for (args) |value| {
-        //try stdout.print("{s}\n", .{value});
-        //}
         if (args.len == 0) continue;
 
-        const cmd_str = args[0];
+        const parsed_cmd = parseCommand(args);
+        const cmd_str = parsed_cmd.args[0];
 
         // Check for builtins first
         if (std.meta.stringToEnum(Commands, cmd_str)) |cmd| {
             switch (cmd) {
-                .type => try handleType(allocator, args),
-                .echo => try handleEcho(args[1..]),
+                .type => try handleType(allocator, parsed_cmd.args),
+                .echo => try handleEcho(parsed_cmd.args[1..], parsed_cmd.stdout_file),
                 .pwd => try handlePwd(),
-                .cd => try handleCd(args),
-                .exit => try handleExit(args),
+                .cd => try handleCd(parsed_cmd.args),
+                .exit => try handleExit(parsed_cmd.args),
             }
         } else {
             // Treat as external command
-            try runExternalCmd(allocator, args);
+            try runExternalCmd(allocator, parsed_cmd.args, parsed_cmd.stdout_file);
         }
     }
 }
@@ -172,38 +189,30 @@ fn handleCd(args: []const []const u8) !void {
     }
 }
 
-fn handleEcho(args: []const []const u8) !void {
+fn handleEcho(args: []const []const u8, output_file_path: ?[]const u8) !void {
     var output_file: ?std.fs.File = null;
-    var args_to_print = args;
 
-    // Scan for redirection operator
-    for (args, 0..) |arg, i| {
-        if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
-            if (i + 1 < args.len) {
-                const filename = args[i + 1];
-                output_file = try std.fs.cwd().createFile(filename, .{});
-                args_to_print = args[0..i];
-            }
-            break;
-        }
+    if (output_file_path) |filename| {
+        output_file = try std.fs.cwd().createFile(filename, .{});
     }
     defer if (output_file) |f| f.close();
 
     if (output_file) |file| {
         // Create a streaming writer for the file
-        var writer_impl = file.writerStreaming(&.{});
-        const writer = &writer_impl.interface;
-        for (args_to_print, 0..) |arg, i| {
+        var buf: [4096]u8 = undefined;
+        const writer_impl = file.writerStreaming(&buf);
+        var writer = &writer_impl.interface;
+        for (args, 0..) |arg, i| {
             try writer.print("{s}", .{arg});
-            if (i < args_to_print.len - 1) {
+            if (i < args.len - 1) {
                 try writer.print(" ", .{});
             }
         }
         try writer.print("\n", .{});
     } else {
-        for (args_to_print, 0..) |arg, i| {
+        for (args, 0..) |arg, i| {
             try stdout.print("{s}", .{arg});
-            if (i < args_to_print.len - 1) {
+            if (i < args.len - 1) {
                 try stdout.print(" ", .{});
             }
         }
@@ -239,22 +248,9 @@ fn handleType(allocator: std.mem.Allocator, args: []const []const u8) !void {
 
 fn runExternalCmd(
     allocator: std.mem.Allocator,
-    argv_in: []const []const u8,
+    argv: []const []const u8,
+    redirect_file: ?[]const u8,
 ) !void {
-    var argv = argv_in;
-    var redirect_file: ?[]const u8 = null;
-
-    // Check for redirection
-    for (argv, 0..) |arg, i| {
-        if (std.mem.eql(u8, arg, ">") or std.mem.eql(u8, arg, "1>")) {
-            if (i + 1 < argv.len) {
-                redirect_file = argv[i + 1];
-                argv = argv[0..i];
-            }
-            break;
-        }
-    }
-
     const cmd_str = argv[0];
 
     // 1. Check if executable exists in PATH
