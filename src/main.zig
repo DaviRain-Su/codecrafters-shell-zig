@@ -202,18 +202,24 @@ fn handleCd(args: []const []const u8) !void {
 }
 
 fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void {
-    var output_file: ?std.fs.File = null;
+    var stdout_file: ?std.fs.File = null;
 
     if (output_file_path) |filename| {
         switch (filename) {
-            .stderr, .stdout => |path| {
-                output_file = try std.fs.cwd().createFile(path, .{});
+            .stdout => |path| {
+                stdout_file = try std.fs.cwd().createFile(path, .{});
+            },
+            .stderr => |path| {
+                // For 2>, create the file (simulating stderr redirection setup),
+                // but echo writes to stdout, so we just close it.
+                const f = try std.fs.cwd().createFile(path, .{});
+                f.close();
             },
         }
     }
-    defer if (output_file) |f| f.close();
+    defer if (stdout_file) |f| f.close();
 
-    if (output_file) |file| {
+    if (stdout_file) |file| {
         // Create a streaming writer for the file
         var writer_impl = file.writerStreaming(&.{});
         var writer = &writer_impl.interface;
