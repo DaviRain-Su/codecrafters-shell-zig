@@ -199,8 +199,8 @@ fn handleEcho(args: []const []const u8, output_file_path: ?[]const u8) !void {
 
     if (output_file) |file| {
         // Create a streaming writer for the file
-        var buf: [4096]u8 = undefined;
-        var writer_impl = file.writerStreaming(&buf);
+        //var buf: [4096]u8 = undefined;
+        var writer_impl = file.writerStreaming(&.{});
         var writer = &writer_impl.interface;
         for (args, 0..) |arg, i| {
             try writer.print("{s}", .{arg});
@@ -209,7 +209,7 @@ fn handleEcho(args: []const []const u8, output_file_path: ?[]const u8) !void {
             }
         }
         try writer.print("\n", .{});
-        try writer.flush();
+        //try writer.flush();
     } else {
         for (args, 0..) |arg, i| {
             try stdout.print("{s}", .{arg});
