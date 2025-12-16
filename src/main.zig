@@ -230,7 +230,7 @@ fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void
         switch (filename) {
             .stdout => |path| {
                 if (path.append) {
-                    stdout_file = try std.fs.cwd().openFile(path.stdout, .{ .mode = .write_only });
+                    stdout_file = try std.fs.cwd().createFile(path.stdout, .{ .truncate = false });
                     // get size to seekTo End
                     const size = try stdout_file.?.getEndPos();
                     try stdout_file.?.seekTo(size);
@@ -334,7 +334,7 @@ fn runExternalCmd(
             switch (file_path) {
                 .stdout => |path| {
                     if (path.append) {
-                        const file = try std.fs.cwd().openFile(path.stdout, .{ .mode = .write_only });
+                        const file = try std.fs.cwd().createFile(path.stdout, .{ .truncate = false });
                         // get size to seekTo End
                         const size = try file.getEndPos();
                         try file.seekTo(size);
