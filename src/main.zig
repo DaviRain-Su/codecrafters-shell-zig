@@ -50,7 +50,7 @@ fn parseCommand(allocator: std.mem.Allocator, args: []const []const u8) !ParsedC
                 i += 2; // Skip operator and filename
                 continue;
             }
-        } else if (std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>")) {
+        } else if (std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>>")) {
             if (i + 1 < args.len) {
                 output_file_path = OutputFilePath{ .stdout = SelfStdout{ .stdout = args[i + 1], .append = true } };
                 i += 2; // Skip operator and filename
