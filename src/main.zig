@@ -230,6 +230,7 @@ fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void
         switch (filename) {
             .stdout => |path| {
                 if (path.append) {
+                    // TIPS: Use .truncate = false to append to the file
                     stdout_file = try std.fs.cwd().createFile(path.stdout, .{ .truncate = false });
                     // get size to seekTo End
                     const size = try stdout_file.?.getEndPos();
