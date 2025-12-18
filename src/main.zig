@@ -247,10 +247,11 @@ fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void
             .stderr => |path| {
                 if (path.append) {
                     // TIPS: Use .truncate = false to append to the file
-                    stdout_file = try std.fs.cwd().createFile(path.stderr, .{ .truncate = false });
+                    const file = try std.fs.cwd().createFile(path.stderr, .{ .truncate = false });
                     // get size to seekTo End
-                    const size = try stdout_file.?.getEndPos();
-                    try stdout_file.?.seekTo(size);
+                    const size = try file.getEndPos();
+                    try file.seekTo(size);
+                    file.close();
                 } else {
                     const f = try std.fs.cwd().createFile(path.stderr, .{});
                     f.close();
