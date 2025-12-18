@@ -236,25 +236,19 @@ fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void
             .stdout => |path| {
                 if (path.append) {
                     // TIPS: Use .truncate = false to append to the file
-                    stdout_file = try std.fs.cwd().createFile(path.stdout, .{ .truncate = false });
-                    // get size to seekTo End
-                    const size = try stdout_file.?.getEndPos();
-                    try stdout_file.?.seekTo(size);
+                    stdout_file = try openAppendFile(path.stdout);
                 } else {
-                    stdout_file = try std.fs.cwd().createFile(path.stdout, .{});
+                    stdout_file = try openOverwriteFile(path.stdout);
                 }
             },
             .stderr => |path| {
                 if (path.append) {
                     // TIPS: Use .truncate = false to append to the file
-                    const file = try std.fs.cwd().createFile(path.stderr, .{ .truncate = false });
-                    // get size to seekTo End
-                    const size = try file.getEndPos();
-                    try file.seekTo(size);
+                    const file = try openAppendFile(path.stderr);
                     file.close();
                 } else {
-                    const f = try std.fs.cwd().createFile(path.stderr, .{});
-                    f.close();
+                    const file = try openOverwriteFile(path.stderr);
+                    file.close();
                 }
             },
         }
@@ -309,6 +303,21 @@ fn handleType(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 }
 
+fn seekToEnd(file: std.fs.File) !void {
+    const size = try file.getEndPos();
+    try file.seekTo(size);
+}
+
+fn openAppendFile(path: []const u8) !std.fs.File {
+    const f = try std.fs.cwd().createFile(path, .{ .truncate = false });
+    try seekToEnd(f);
+    return f;
+}
+
+fn openOverwriteFile(path: []const u8) !std.fs.File {
+    return try std.fs.cwd().createFile(path, .{});
+}
+
 fn runExternalCmd(
     allocator: std.mem.Allocator,
     argv: []const []const u8,
@@ -347,16 +356,12 @@ fn runExternalCmd(
             switch (file_path) {
                 .stdout => |path| {
                     if (path.append) {
-                        const file = try std.fs.cwd().createFile(path.stdout, .{ .truncate = false });
-                        // get size to seekTo End
-                        const size = try file.getEndPos();
-                        try file.seekTo(size);
+                        const file = try openAppendFile(path.stdout);
                         // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
                         _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
                         file.close();
                     } else {
-                        const file = try std.fs.cwd().createFile(path.stdout, .{});
-                        // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
+                        const file = try openOverwriteFile(path.stdout); // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
                         _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
                         file.close();
                     }
@@ -364,16 +369,12 @@ fn runExternalCmd(
                 .stderr => |path| {
                     if (path.append) {
                         // TIPS: Use .truncate = false to append to the file
-                        const file = try std.fs.cwd().createFile(path.stderr, .{ .truncate = false });
-                        // get size to seekTo End
-                        const size = try file.getEndPos();
-                        try file.seekTo(size);
+                        const file = try openAppendFile(path.stderr);
                         // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)
                         _ = try std.posix.dup2(file.handle, std.posix.STDERR_FILENO);
                         file.close();
                     } else {
-                        const file = try std.fs.cwd().createFile(path.stderr, .{});
-                        // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)。
+                        const file = try openOverwriteFile(path.stderr); // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)。
                         _ = try std.posix.dup2(file.handle, std.posix.STDERR_FILENO);
                         file.close();
                     }
