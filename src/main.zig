@@ -57,7 +57,7 @@ fn parseCommand(allocator: std.mem.Allocator, args: []const []const u8) !ParsedC
             }
         } else if (std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>>")) {
             if (i + 1 < args.len) {
-                output_file_path = OutputFilePath{ .stdout = SelfStdout{ .stdout = args[i + 1], .append = std.mem.eql(u8, arg, "1>>") } };
+                output_file_path = OutputFilePath{ .stdout = SelfStdout{ .stdout = args[i + 1], .append = true } };
                 i += 2; // Skip operator and filename
                 continue;
             }
@@ -367,8 +367,8 @@ fn runExternalCmd(
                         // get size to seekTo End
                         const size = try file.getEndPos();
                         try file.seekTo(size);
-                        // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
-                        _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
+                        // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)
+                        _ = try std.posix.dup2(file.handle, std.posix.STDERR_FILENO);
                         file.close();
                     } else {
                         const file = try std.fs.cwd().createFile(path.stderr, .{});
