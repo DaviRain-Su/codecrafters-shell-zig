@@ -23,11 +23,16 @@ const ParsedCommand = struct {
 
 const OutputFilePath = union(enum) {
     stdout: SelfStdout,
-    stderr: []const u8,
+    stderr: SelfStderr,
 };
 
 const SelfStdout = struct {
     stdout: []const u8,
+    append: bool = false,
+};
+
+const SelfStderr = struct {
+    stderr: []const u8,
     append: bool = false,
 };
 
@@ -44,15 +49,15 @@ fn parseCommand(allocator: std.mem.Allocator, args: []const []const u8) !ParsedC
                 i += 2; // Skip operator and filename
                 continue;
             }
-        } else if (std.mem.eql(u8, arg, "2>")) {
+        } else if (std.mem.eql(u8, arg, "2>") or std.mem.eql(u8, arg, "2>>")) {
             if (i + 1 < args.len) {
-                output_file_path = OutputFilePath{ .stderr = args[i + 1] };
+                output_file_path = OutputFilePath{ .stderr = SelfStderr{ .stderr = args[i + 1], .append = std.mem.eql(u8, arg, "2>>") } };
                 i += 2; // Skip operator and filename
                 continue;
             }
         } else if (std.mem.eql(u8, arg, ">>") or std.mem.eql(u8, arg, "1>>")) {
             if (i + 1 < args.len) {
-                output_file_path = OutputFilePath{ .stdout = SelfStdout{ .stdout = args[i + 1], .append = true } };
+                output_file_path = OutputFilePath{ .stdout = SelfStdout{ .stdout = args[i + 1], .append = std.mem.eql(u8, arg, "1>>") } };
                 i += 2; // Skip operator and filename
                 continue;
             }
@@ -240,10 +245,16 @@ fn handleEcho(args: []const []const u8, output_file_path: ?OutputFilePath) !void
                 }
             },
             .stderr => |path| {
-                // For 2>, create the file (simulating stderr redirection setup),
-                // but echo writes to stdout, so we just close it.
-                const f = try std.fs.cwd().createFile(path, .{});
-                f.close();
+                if (path.append) {
+                    // TIPS: Use .truncate = false to append to the file
+                    stdout_file = try std.fs.cwd().createFile(path.stderr, .{ .truncate = false });
+                    // get size to seekTo End
+                    const size = try stdout_file.?.getEndPos();
+                    try stdout_file.?.seekTo(size);
+                } else {
+                    const f = try std.fs.cwd().createFile(path.stderr, .{});
+                    f.close();
+                }
             },
         }
     }
@@ -350,10 +361,21 @@ fn runExternalCmd(
                     }
                 },
                 .stderr => |path| {
-                    const file = try std.fs.cwd().createFile(path, .{});
-                    // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)。
-                    _ = try std.posix.dup2(file.handle, std.posix.STDERR_FILENO);
-                    file.close();
+                    if (path.append) {
+                        // TIPS: Use .truncate = false to append to the file
+                        const file = try std.fs.cwd().createFile(path.stderr, .{ .truncate = false });
+                        // get size to seekTo End
+                        const size = try file.getEndPos();
+                        try file.seekTo(size);
+                        // 使用 dup2 将目标文件的文件描述符复制到 STDOUT_FILENO (1)。
+                        _ = try std.posix.dup2(file.handle, std.posix.STDOUT_FILENO);
+                        file.close();
+                    } else {
+                        const file = try std.fs.cwd().createFile(path.stderr, .{});
+                        // 使用 dup2 将目标文件的文件描述符复制到 STDERR_FILENO (2)。
+                        _ = try std.posix.dup2(file.handle, std.posix.STDERR_FILENO);
+                        file.close();
+                    }
                 },
             }
         }
